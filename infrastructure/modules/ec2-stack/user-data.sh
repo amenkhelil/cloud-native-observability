@@ -14,6 +14,11 @@ chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
+curl -sSL https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.linux-amd64 -o /usr/libexec/docker/cli-plugins/docker-buildx
+chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
+ln -sf /usr/libexec/docker/cli-plugins/docker-buildx /usr/local/bin/docker-buildx
+ln -sf /usr/libexec/docker/cli-plugins/docker-buildx /usr/bin/docker-buildx
+
 mkdir -p /opt/cloud-native-observability
 cd /opt/cloud-native-observability
 
