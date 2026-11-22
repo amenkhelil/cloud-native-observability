@@ -1,0 +1,66 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r application/service-a/requirements.txt
+          python -m pip install -r application/service-b/requirements.txt
+          python -m pip install -r ai-engine/requirements.txt
+          python -m pip install pytest-asyncio==0.25.3
+      - name: Run application and AI tests
+        run: python -m pytest application/service-a/tests application/service-b/tests ai-engine/tests -v
+      - name: Build Docker images
+        run: |
+          docker build -t service-a application/service-a
+          docker build -t service-b application/service-b
+          docker build -t ai-detector ai-engine
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: service-a
+          format: sarif
+          output: trivy-service-a.sarif
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: service-b
+          format: sarif
+          output: trivy-service-b.sarif
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+      - name: Upload Trivy reports
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Terraform format check
+        run: terraform fmt -check -recursive infrastructure
+      - name: Terraform validate
+        working-directory: infrastructure/environments/dev
+        run: |
+          terraform init -backend=false
+          terraform validate
