@@ -38,11 +38,20 @@ jobs:
         run: |
           trivy image --severity CRITICAL,HIGH --ignore-unfixed --format sarif --output trivy-service-a.sarif service-a || true
           trivy image --severity CRITICAL,HIGH --ignore-unfixed --format sarif --output trivy-service-b.sarif service-b || true
-      - name: Upload Trivy reports
+      - name: Upload Trivy report for service-a
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
         with:
-          sarif_file: .
+          sarif_file: trivy-service-a.sarif
+          category: service-a
+      - name: Upload Trivy report for service-b
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
+        with:
+          sarif_file: trivy-service-b.sarif
+          category: service-b
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
