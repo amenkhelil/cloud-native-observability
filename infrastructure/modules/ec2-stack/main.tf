@@ -94,6 +94,7 @@ resource "aws_instance" "main" {
     git_repo_url        = var.git_repo_url
     project_archive_b64 = var.project_archive_b64
   }))
+  user_data_replace_on_change = true
 
   tags = {
     Name = "${var.environment}-observability"

@@ -4,12 +4,15 @@ set -euo pipefail
 exec > >(tee -a /var/log/cloud-native-observability-bootstrap.log) 2>&1
 echo "Bootstrap started: $(date -u +%FT%TZ)"
 
-dnf install -y docker git curl
+dnf install -y docker git
 systemctl enable --now docker
+usermod -aG docker ec2-user || true
 
 mkdir -p /usr/libexec/docker/cli-plugins
 curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
 chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
 mkdir -p /opt/cloud-native-observability
 cd /opt/cloud-native-observability

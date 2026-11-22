@@ -24,8 +24,9 @@ variable "ssh_key_name" {
 }
 
 variable "ssh_allowed_cidr" {
-  type    = string
-  default = ""
+  type        = string
+  default     = "0.0.0.0/0"
+  description = "CIDR allowed for SSH and EC2 Instance Connect."
 }
 
 variable "public_access_cidr" {
