@@ -29,8 +29,9 @@ variable "ssh_allowed_cidr" {
 }
 
 variable "public_access_cidr" {
-  type    = string
-  default = ""
+  type        = string
+  default     = "0.0.0.0/0"
+  description = "CIDR allowed to access published application and observability ports."
 }
 
 variable "enable_cloudwatch_alarm" {
