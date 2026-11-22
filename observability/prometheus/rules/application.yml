@@ -1,0 +1,49 @@
+groups:
+  - name: application-alerts
+    rules:
+      - alert: ServiceAHighHTTPErrorRate
+        expr: |
+          100 * sum(rate(http_requests_total{status=~"5..",path="/api/process"}[1m]))
+          / clamp_min(sum(rate(http_requests_total{path="/api/process"}[1m])), 1) > 10
+        for: 30s
+        labels:
+          severity: high
+          service: service-a
+        annotations:
+          summary: "Service A HTTP 5xx ratio exceeds 10%"
+
+      - alert: ServiceAHighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path="/api/process"}[1m])) by (le)) > 1
+        for: 30s
+        labels:
+          severity: warning
+          service: service-a
+        annotations:
+          summary: "Service A P95 latency exceeds 1 second"
+
+      - alert: ServiceBUnavailable
+        expr: up{job="service-b"} == 0
+        for: 30s
+        labels:
+          severity: high
+          service: service-b
+        annotations:
+          summary: "Service B Prometheus scrape target is unavailable"
+
+      - alert: ServiceAUnavailable
+        expr: up{job="service-a"} == 0
+        for: 30s
+        labels:
+          severity: high
+          service: service-a
+        annotations:
+          summary: "Service A Prometheus scrape target is unavailable"
+
+      - alert: ServiceACircuitBreakerOpen
+        expr: circuit_breaker_state{dependency="service-b"} == 1
+        for: 15s
+        labels:
+          severity: warning
+          service: service-a
+        annotations:
+          summary: "Service A circuit breaker is OPEN for service-b"
