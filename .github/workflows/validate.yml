@@ -31,6 +31,7 @@ jobs:
           docker build -t service-a application/service-a
           docker build -t service-b application/service-b
           docker build -t ai-detector ai-engine
+          docker build -t gateway gateway
       - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
