@@ -3,13 +3,13 @@ param(
     [string]$Mode = "http500",
     [ValidateRange(30, 300)]
     [int]$DurationSeconds = 120,
-    [string]$BaseUrl = "http://localhost:8080",
-    [string]$AdminToken = "change-me-on-first-start"
+    [string]$BaseUrl = "",
+    [string]$AdminToken = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-if ($BaseUrl -match '^https?://(:|/)' -or $BaseUrl -eq "http://localhost:8080") {
+if (-not $BaseUrl) {
     $tfState = Join-Path (Split-Path $PSScriptRoot -Parent) "infrastructure/environments/dev/terraform.tfstate"
     if (Test-Path $tfState) {
         try {
@@ -17,35 +17,58 @@ if ($BaseUrl -match '^https?://(:|/)' -or $BaseUrl -eq "http://localhost:8080") 
             $inst = $stateJson.resources | Where-Object { $_.type -eq "aws_instance" } | Select-Object -First 1
             $detectedIp = $inst.instances[0].attributes.public_ip
             if ($detectedIp) {
-                $BaseUrl = "http://${detectedIp}:8080"
-                Write-Host "Auto-detected EC2 Public IP: $detectedIp"
+                $BaseUrl = "http://${detectedIp}:80"
+                Write-Host "Auto-detected EC2 Ingress Gateway: $BaseUrl" -ForegroundColor Cyan
             }
         } catch {}
     }
 }
 
-$envFile = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
-if ($envFile -and (Test-Path $envFile)) {
-    $envLine = Get-Content $envFile | Where-Object { $_ -match '^FAILURE_ADMIN_TOKEN=' } | Select-Object -First 1
-    if ($envLine) {
-        $AdminToken = ($envLine -split '=', 2)[1].Trim().Trim('"')
+if (-not $BaseUrl) {
+    $BaseUrl = "http://localhost:80"
+}
+
+# Resolve Admin Token: 1. AWS SSM Parameter Store -> 2. .env file -> 3. Fallback default
+if (-not $AdminToken) {
+    try {
+        $ssmVal = aws ssm get-parameter --name "/cloud-native-observability/failure-admin-token" --with-decryption --query "Parameter.Value" --output text 2>$null
+        if ($ssmVal -and $LASTEXITCODE -eq 0) {
+            $AdminToken = $ssmVal.Trim()
+            Write-Host "Loaded FAILURE_ADMIN_TOKEN from AWS SSM Parameter Store." -ForegroundColor Green
+        }
+    } catch {}
+}
+
+if (-not $AdminToken) {
+    $envFile = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
+    if ($envFile -and (Test-Path $envFile)) {
+        $envLine = Get-Content $envFile | Where-Object { $_ -match '^FAILURE_ADMIN_TOKEN=' } | Select-Object -First 1
+        if ($envLine) {
+            $AdminToken = ($envLine -split '=', 2)[1].Trim().Trim('"')
+        }
     }
 }
+
+if (-not $AdminToken) {
+    $AdminToken = "change-me-on-first-start"
+}
+
 $headers = @{ "X-Failure-Token" = $AdminToken }
 $failureUrl = "$BaseUrl/admin/failure?mode=$Mode&duration_seconds=$DurationSeconds"
 
-Write-Host "Starting $Mode failure for $DurationSeconds seconds..."
+Write-Host "Starting $Mode failure for $DurationSeconds seconds via Gateway..." -ForegroundColor Yellow
 Invoke-RestMethod -Method Post -Headers $headers -Uri $failureUrl | Out-Null
 
 $uri = [System.Uri]$BaseUrl
 $hostName = $uri.Host
 
 Write-Host ""
-Write-Host "Dashboards & Alerts URLs (open now):" -ForegroundColor Cyan
-Write-Host "  Prometheus:   http://${hostName}:9090/alerts"
-Write-Host "  Alertmanager: http://${hostName}:9093"
-Write-Host "  Grafana:      http://${hostName}:3000"
-Write-Host "  Circuit Brk:  http://${hostName}:8080/admin/circuit-breaker"
+Write-Host "Operations & Observability Access:" -ForegroundColor Cyan
+Write-Host "  Service A (Gateway):   $BaseUrl/health"
+Write-Host "  Grafana (Gateway):     $BaseUrl/grafana/"
+Write-Host "  Circuit Breaker:       $BaseUrl/admin/circuit-breaker"
+Write-Host "  Prometheus/Alertmgr:   Securely isolated on localhost."
+Write-Host "                         Tunnel command: ssh -L 9090:localhost:9090 -L 9093:localhost:9093 ec2-user@${hostName}"
 Write-Host ""
 Write-Host "Generating failure traffic continuously for $DurationSeconds seconds..."
 
@@ -70,4 +93,4 @@ while ((Get-Date) -lt $endTime) {
 
 Invoke-RestMethod -Method Post -Headers $headers `
     -Uri "$BaseUrl/admin/failure?mode=&duration_seconds=60" | Out-Null
-Write-Host "Failure disabled."
+Write-Host "Failure disabled." -ForegroundColor Green

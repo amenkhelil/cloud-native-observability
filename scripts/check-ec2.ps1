@@ -18,8 +18,11 @@ if (-not $instance) {
 $instanceId = $instance.instances[0].attributes.id
 $ip = if ($PublicIp) { $PublicIp } else { $instance.instances[0].attributes.public_ip }
 
-Write-Host "Instance: $instanceId"
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "EC2 Ingress & Security Verification" -ForegroundColor Cyan
+Write-Host "Instance:  $instanceId"
 Write-Host "Public IP: $ip"
+Write-Host "==========================================" -ForegroundColor Cyan
 
 $description = aws ec2 describe-instances `
     --region $Region `
@@ -30,15 +33,39 @@ $description = aws ec2 describe-instances `
 Write-Output $description
 
 if ($ip) {
-    $ports = @(8080, 8081, 9090, 9093, 3000)
-    foreach ($port in $ports) {
-        $path = if ($port -eq 8080 -or $port -eq 8081) { "/health" } else { "" }
-        $url = "http://${ip}:${port}${path}"
+    Write-Host "`n1. Verifying Public Gateway Ingress (Port 80 & 443)..." -ForegroundColor Yellow
+    $gatewayEndpoints = @(
+        @{ Name = "Gateway Health (HTTP)"; Url = "http://${ip}:80/healthz" },
+        @{ Name = "Service A via Ingress"; Url = "http://${ip}:80/health" },
+        @{ Name = "Grafana via Ingress"; Url = "http://${ip}:80/grafana/api/health" }
+    )
+
+    foreach ($ep in $gatewayEndpoints) {
         try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
-            Write-Host "${url} -> $($response.StatusCode)"
+            $response = Invoke-WebRequest -Uri $ep.Url -UseBasicParsing -TimeoutSec 5
+            Write-Host "  [OK] $($ep.Name): $($ep.Url) -> $($response.StatusCode)" -ForegroundColor Green
         } catch {
-            Write-Host "${url} -> unreachable"
+            Write-Host "  [FAIL] $($ep.Name): $($ep.Url) -> unreachable" -ForegroundColor Red
         }
     }
+
+    Write-Host "`n2. Verifying Security Isolation (Internal Ports MUST be unreachable from public internet)..." -ForegroundColor Yellow
+    $isolatedPorts = @(8080, 8081, 9090, 9093, 3000)
+    foreach ($port in $isolatedPorts) {
+        $testUrl = "http://${ip}:${port}/"
+        try {
+            $resp = Invoke-WebRequest -Uri $testUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+            Write-Host "  [WARNING] Port $port is exposed: $testUrl returned $($resp.StatusCode)" -ForegroundColor Red
+        } catch {
+            Write-Host "  [SECURE] Port $port correctly blocked by Security Group (unreachable)" -ForegroundColor Green
+        }
+    }
+
+    Write-Host "`n3. Administrative Telemetry Access (SSH Tunneling):" -ForegroundColor Cyan
+    Write-Host "  Prometheus and Alertmanager are isolated on host loopback (127.0.0.1)."
+    Write-Host "  To access them securely from your workstation, open an SSH tunnel:"
+    Write-Host "    ssh -i <your-key.pem> -L 9090:localhost:9090 -L 9093:localhost:9093 ec2-user@${ip}"
+    Write-Host "  Then open in browser:"
+    Write-Host "    Prometheus:   http://localhost:9090"
+    Write-Host "    Alertmanager: http://localhost:9093"
 }
