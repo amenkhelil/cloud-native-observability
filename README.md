@@ -38,47 +38,47 @@ This platform delivers an end-to-end cloud-native system composed of:
                               |   |                                               |   |
                               |   |   +---------------------------------------+   |   |
                               |   |   |   Amazon Linux 2023 (EC2 t3.small)    |   |   |
-  Client Traffic ------------->   |   |                                       |   |   |
-  (Port 8080)                 |   |   |   +-------------+   HTTP /api/work   |   |   |
-                              |   |   |   |  Service A  | ----------------->  |   |   |
-                              |   |   |   | (Gateway &  |   Circuit Breaker   |   |   |
-                              |   |   |   |  Breaker)   | <-----------------  |   |   |
-                              |   |   |   +------+------+    Fallback / 503   |   |   |
+                              |   |   |                                       |   |   |
+  Public Client Traffic ------>   |   |   +-------------------------------+   |   |   |
+  (Port 80 HTTP / 443 HTTPS)  |   |   |   |    Nginx Ingress Gateway      |   |   |   |
+                              |   |   |   |  - TLS Termination (OpenSSL)  |   |   |   |
+                              |   |   |   |  - Path & Subdomain Routing   |   |   |   |
+                              |   |   |   +---------------+---------------+   |   |   |
+                              |   |   |                   |                   |   |   |
+                              |   |   |         +---------+---------+         |   |   |
+                              |   |   |         |                   |         |   |   |
+                              |   |   |         | Proxy /           | Proxy   |   |   |
+                              |   |   |         v (api.*)           v /grafana|   |   |
+                              |   |   |   +-------------+     +-------------+ |   |   |
+                              |   |   |   |  Service A  |     |   Grafana   | |   |   |
+                              |   |   |   |  (Gateway)  |     |   (11.5.2)  | |   |   |
+                              |   |   |   +------+------+     +-------------+ |   |   |
+                              |   |   |          |                   ^        |   |   |
+                              |   |   |          | /api/work         | Query  |   |   |
+                              |   |   |          v                   | TSDB   |   |   |
+                              |   |   |   +-------------+            |        |   |   |
+                              |   |   |   |  Service B  |            |        |   |   |
+                              |   |   |   |  (Backend)  |            |        |   |   |
+                              |   |   |   +------+------+            |        |   |   |
+                              |   |   |          |                   |        |   |   |
+                              |   |   |          | Scrape /metrics   |        |   |   |
+                              |   |   |          v                   |        |   |   |
+  Admin SSH Tunnel ----------->   |   |   +-------------+            |        |   |   |
+  (Port 22 -> 9090 / 9093)    |   |   |   | Prometheus  +------------+        |   |   |
+                              |   |   |   |  (v2.55.1)  |                     |   |   |
+                              |   |   |   +------+------+                     |   |   |
                               |   |   |          |                            |   |   |
-                              |   |   |          | GET /metrics               |   |   |
+                              |   |   |          | PromQL Alerts              |   |   |
                               |   |   |          v                            |   |   |
-                              |   |   |   +-------------+       Scrape        |   |   |
-                              |   |   |   | Prometheus  | <----------------+  |   |   |
-                              |   |   |   |  (v2.55.1)  |                  |  |   |   |
-                              |   |   |   +------+------+                  |  |   |   |
-                              |   |   |          |                         |  |   |   |
-                              |   |   |          | PromQL Alert Rules      |  |   |   |
-                              |   |   |          v                         |  |   |   |
-                              |   |   |   +-------------+                  |  |   |   |
-                              |   |   |   |Alertmanager |                  |  |   |   |
-                              |   |   |   |  (v0.27.0)  |                  |  |   |   |
-                              |   |   |   +------+------+                  |  |   |   |
-                              |   |   |          |                         |  |   |   |
-                              |   |   |          | Webhook Notification    |  |   |   |
-                              |   |   |          +--------------+          |  |   |   |
-                              |   |   |                         |          |  |   |   |
-                              |   |   |   +-------------+       |          |  |   |   |
-                              |   |   |   |  Service B  | <-----+          |  |   |   |
-                              |   |   |   |  (Backend)  |                  |  |   |   |
-                              |   |   |   +------+------+                  |  |   |   |
-                              |   |   |          |                         |  |   |   |
-                              |   |   |          | GET /metrics            |  |   |   |
-                              |   |   |          +-------------------------+  |   |   |
-                              |   |   |                                       |   |   |
-                              |   |   |   +-------------+   Query Metrics     |   |   |
-                              |   |   |   | ai-detector | ----------------->  |   |   |
-                              |   |   |   | (Isolation  |   Evaluation (15s)  |   |   |
-                              |   |   |   |   Forest)   |                     |   |   |
                               |   |   |   +-------------+                     |   |   |
-                              |   |   |                                       |   |   |
-                              |   |   |   +-------------+   Query TSDB        |   |   |
-  Operations ----------------->   |   |   |   Grafana   | ----------------->  |   |   |
-  (Port 3000)                 |   |   |   |  (11.5.2)   |                     |   |   |
+                              |   |   |   |Alertmanager |                     |   |   |
+                              |   |   |   |  (v0.27.0)  +--------+            |   |   |
+                              |   |   |   +-------------+        |            |   |   |
+                              |   |   |                          | Webhook    |   |   |
+                              |   |   |   +-------------+        | Auto-Heal  |   |   |
+                              |   |   |   | ai-detector |        v            |   |   |
+                              |   |   |   | (Isolation  |   (Service A)       |   |   |
+                              |   |   |   |   Forest)   |                     |   |   |
                               |   |   |   +-------------+                     |   |   |
                               |   |   +---------------------------------------+   |   |
                               |   +-----------------------------------------------+   |
@@ -343,21 +343,40 @@ The model is serialized to `model.joblib` and containerized as an independent ba
 
 All AWS infrastructure is managed with Terraform, adhering to modular, repeatable design principles.
 
-### Networking & Security Groups
+### Networking & Ingress Hardening
 
-The networking module provisions:
+To eliminate direct public exposure of internal application and monitoring services, network ingress is consolidated behind a hardened **Nginx Ingress Gateway**:
 - Dedicated VPC (`10.20.0.0/16`) with DNS hostnames enabled.
 - Public subnets across two Availability Zones (`us-east-1a`, `us-east-1b`) for high-availability routing.
 - Internet Gateway and public route table associations.
-- Security Group enforcing least-privilege ingress rules:
+- **Hardened Ingress Security Group**:
+  - Port `80`: Public HTTP Ingress (routes to Service A on `/` or Grafana on `/grafana/`).
+  - Port `443`: Public HTTPS Ingress with TLS termination (TLSv1.2/1.3, modern cipher suite).
+  - Port `22`: SSH administrative access restricted by CIDR.
+- **Internal Service Isolation**:
+  - **Service B**: Completely unmapped to host ports; internal Docker networking only.
+  - **Service A & Grafana**: Bound strictly to loopback (`127.0.0.1`), accessible externally only through the Ingress Gateway.
+  - **Prometheus & Alertmanager**: Bound to host loopback (`127.0.0.1:9090`, `127.0.0.1:9093`) and completely isolated from public ingress. Operators access telemetry consoles securely via SSH port forwarding (`ssh -L 9090:localhost:9090 -L 9093:localhost:9093`).
 
-![AWS Security Group Rules](assets/screenshots/06-aws-security-group-inbound.png)
-*Figure 6.1: Security Group configuration restricting ingress exclusively to required application, telemetry, and management ports.*
+![AWS Security Group Hardened](assets/screenshots/20-security-group-hardened.png)
+*Figure 6.1: Hardened Security Group restricting public ingress exclusively to ports 80 (HTTP), 443 (HTTPS), and 22 (SSH administrative tunnel).*
 
-- Port `22`: SSH administrative access.
-- Port `3000`: Grafana monitoring interface.
-- Port `8080` & `8081`: Service A and Service B application endpoints.
-- Port `9090` & `9093`: Prometheus and Alertmanager administrative consoles.
+#### Ingress Gateway Routing & Network Isolation Verification
+
+The reverse proxy terminates client traffic and secures internal microservices:
+
+| Ingress Evidence | Verification Screenshot |
+|:---|:---|
+| **HTTP Routing (Port 80 -> Service A)** | ![Gateway HTTP Routing](assets/screenshots/15-gateway-http-routing.png) |
+| **Subpath Proxying (Port 80 -> Grafana)** | ![Grafana Subpath](assets/screenshots/16-gateway-grafana-subpath.png) |
+| **TLS Termination (Port 443 HTTPS)** | ![TLS Termination](assets/screenshots/17-gateway-https-tls.png) |
+| **Telemetry & Internal Port Isolation** | ![Internal Port Isolation](assets/screenshots/18-internal-ports-blocked.png) |
+
+### Secrets Management: AWS SSM Parameter Store & Dynamic Tokens
+
+To eliminate committed credentials and hardcoded tokens:
+- The chaos failure administration token (`FAILURE_ADMIN_TOKEN`) is dynamically resolved at instance launch from **AWS Systems Manager (SSM) Parameter Store** (`/cloud-native-observability/failure-admin-token`).
+- If operating in an offline or restricted sandbox without SSM permissions, the bootstrap script automatically generates a cryptographically secure 256-bit token (`openssl rand -hex 32`) and restricts the local environment file (`chmod 600 .env`).
 
 ### Compute & Automated Bootstrapping
 
@@ -441,12 +460,11 @@ pytest -v
 # 3. Launch local observability stack
 docker compose up -d --build
 
-# 4. Verify local endpoints
-curl http://localhost:8080/health
-curl http://localhost:8081/health
-curl http://localhost:9090/-/ready
-curl http://localhost:9093/-/ready
-curl http://localhost:3000/api/health
+# 4. Verify local endpoints via Ingress Gateway
+curl http://localhost:80/healthz
+curl http://localhost:80/health
+curl http://localhost:80/grafana/api/health
+curl -k https://localhost:443/healthz
 ```
 
 ### Cloud Deployment (AWS via Terraform)
@@ -463,19 +481,31 @@ terraform apply tfplan
 
 # 3. Retrieve public IP
 $IP = terraform output -raw public_ip
-Write-Host "Deployed instance at: http://$IP:8080"
+Write-Host "Deployed instance at: http://$IP:80 (HTTPS at https://$IP:443)"
 ```
 
-### Automated Health Verification
+### Automated Health & Security Verification
 
-Run the bundled PowerShell verification script to confirm instance status and endpoint availability:
+Run the bundled PowerShell verification script to confirm instance status, gateway routing, and verify that internal ports (8080, 8081, 9090, 9093, 3000) are securely blocked from public access:
 
 ```powershell
 .\scripts\check-ec2.ps1 -PublicIp $IP
 ```
 
-![Automated Health Checks](assets/screenshots/08-automated-health-checks.png)
-*Figure 8.1: Output of `check-ec2.ps1` validating running instance status and HTTP 200 responses across all 5 public endpoints.*
+![Automated Health & Security Checks](assets/screenshots/19-security-check-output.png)
+*Figure 8.1: Output of `check-ec2.ps1` validating running instance status, public Ingress Gateway routing, and verified blocking of internal ports 8080, 8081, 9090, 9093, and 3000.*
+
+### Administrative Telemetry Access (SSH Tunneling)
+
+Because Prometheus and Alertmanager are securely isolated from the public internet, open an encrypted SSH tunnel from your workstation to access their management interfaces:
+
+```bash
+ssh -i <your-key.pem> -L 9090:localhost:9090 -L 9093:localhost:9093 ec2-user@$IP
+```
+
+Then navigate locally to:
+- Prometheus Alerts: `http://localhost:9090/alerts`
+- Alertmanager: `http://localhost:9093`
 
 ### Chaos Engineering Demonstration
 
@@ -542,6 +572,11 @@ cloud-native-observability/
 │       └── tests/                 # Unit tests for Service B
 ├── assets/
 │   └── screenshots/               # Real verification and architectural evidence captures
+├── gateway/                       # Nginx Ingress Reverse Proxy & TLS termination
+│   ├── conf.d/
+│   ├── Dockerfile
+│   ├── entrypoint.sh              # Auto-TLS initialization and certificate management
+│   └── nginx.conf                 # Hardened routing, security headers, and proxy rules
 ├── infrastructure/
 │   ├── environments/
 │   │   └── dev/                   # Dev environment deployment root (main.tf, variables.tf)
