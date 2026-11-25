@@ -1,4 +1,26 @@
 services:
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      service-a:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
@@ -10,7 +32,7 @@ services:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/prometheus/rules:/etc/prometheus/rules:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       service-a:
         condition: service_healthy
@@ -51,7 +73,7 @@ services:
           cpus: "0.50"
           memory: 128M
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
 
   grafana:
     image: grafana/grafana:11.5.2
@@ -60,6 +82,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       AWS_REGION: us-east-1
     volumes:
       - grafana-data:/var/lib/grafana
@@ -67,7 +91,7 @@ services:
       - ./observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       prometheus:
         condition: service_healthy
@@ -85,8 +109,6 @@ services:
 
   service-b:
     build: ./application/service-b
-    ports:
-      - "8081:8081"
     environment:
       PORT: "8081"
       FAILURE_SIMULATION_ENABLED: "true"
@@ -106,7 +128,7 @@ services:
   service-a:
     build: ./application/service-a
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       PORT: "8080"
       BACKEND_URL: "http://service-b:8081"

@@ -15,13 +15,13 @@ data "aws_ami" "amazon_linux" {
 
 resource "aws_security_group" "public" {
   name_prefix = "${var.environment}-observability-"
-  description = "Public access to the observability demonstration"
+  description = "Hardened public access through Reverse Proxy Gateway"
   vpc_id      = var.vpc_id
 
   dynamic "ingress" {
     for_each = var.ssh_allowed_cidr != "" ? [var.ssh_allowed_cidr] : []
     content {
-      description = "SSH"
+      description = "SSH Administrative Tunnel"
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
@@ -32,9 +32,9 @@ resource "aws_security_group" "public" {
   dynamic "ingress" {
     for_each = var.public_access_cidr != "" ? [var.public_access_cidr] : []
     content {
-      description = "Applications"
-      from_port   = 8080
-      to_port     = 8081
+      description = "HTTP Gateway Ingress"
+      from_port   = 80
+      to_port     = 80
       protocol    = "tcp"
       cidr_blocks = [ingress.value]
     }
@@ -43,20 +43,9 @@ resource "aws_security_group" "public" {
   dynamic "ingress" {
     for_each = var.public_access_cidr != "" ? [var.public_access_cidr] : []
     content {
-      description = "Grafana"
-      from_port   = 3000
-      to_port     = 3000
-      protocol    = "tcp"
-      cidr_blocks = [ingress.value]
-    }
-  }
-
-  dynamic "ingress" {
-    for_each = var.public_access_cidr != "" ? [var.public_access_cidr] : []
-    content {
-      description = "Prometheus and Alertmanager"
-      from_port   = 9090
-      to_port     = 9093
+      description = "HTTPS Gateway Ingress"
+      from_port   = 443
+      to_port     = 443
       protocol    = "tcp"
       cidr_blocks = [ingress.value]
     }
